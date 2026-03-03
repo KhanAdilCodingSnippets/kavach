@@ -30,14 +30,23 @@ export async function auditContract(base64Data: string, fileType: string) {
 
     const prompt = `
       You are a senior Indian Legal Expert. Analyze this employment document.
-      1. Extract all text clearly.
-      2. Identify 'Red Flags' (Illegal bonds, unfair notice periods, or predatory clauses).
-      3. Cite the relevant section of the Indian Contract Act 1872 if a clause is unfair.
-      4. Provide a 'Trust Score' from 0-100.
-      Return the response in a clear, structured format.
+      Do not include the raw extracted text. Do not use markdown symbols like asterisks or dashes.
+      Return strictly a JSON object with this exact structure (do not wrap in markdown blocks):
+      {
+        "summary": "A clear, professional 2-3 sentence summary of the document's purpose.",
+        "trustScore": 85,
+        "clauses": [
+          {
+            "title": "Name of the clause (e.g., Non-Compete)",
+            "description": "Plain English explanation of what this means for the candidate.",
+            "riskLevel": "High", 
+            "legalReference": "Relevant section of Indian law if applicable, or null"
+          }
+        ]
+      }
+      Risk level must be exactly one of: "High", "Medium", or "Low".
     `;
 
-    // Final security check to ensure no headers disrupt the API
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
 
     const result = await model.generateContent([
@@ -50,9 +59,17 @@ export async function auditContract(base64Data: string, fileType: string) {
       },
     ]);
 
-    return result.response.text();
+    // Strip any potential markdown wrappers the AI might accidentally add
+    let textResult = result.response.text().trim();
+    if (textResult.startsWith('\`\`\`json')) {
+      textResult = textResult.replace(/^\`\`\`json/, '').replace(/\`\`\`$/, '').trim();
+    } else if (textResult.startsWith('\`\`\`')) {
+      textResult = textResult.replace(/^\`\`\`/, '').replace(/\`\`\`$/, '').trim();
+    }
+
+    return textResult;
   } catch (error) {
     console.error("AI Audit Server Error:", error);
-    return "The AI analysis encountered a system error. Please ensure the document is clear and try again.";
+    throw new Error("Analysis failed.");
   }
 }
